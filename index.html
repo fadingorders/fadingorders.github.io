@@ -1,0 +1,361 @@
+<html>
+<head>
+<link rel="icon" href="assets/favicon.svg" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<script src="assets/ethers-5.5.2.umd.min.js" type="application/javascript"></script>
+<script src="assets/detect-provider.min.js"></script>
+<script src="assets/attention.js"></script>
+<script src="assets/randarray.js"></script>
+<script src="assets/codec-b64.js"></script>
+<link rel="stylesheet" href="assets/bulma.min.css">
+<link rel="stylesheet" href="assets/attention.css">
+<title>P2P Orders</title>
+</head>
+<body style="margin: 0 auto; width: 380px">
+	<center class="title is-4">Create a Peer-to-Peer Order</center>
+	<p>Your Address:<br><u id="signerAddress"></u></p>
+
+	<p>Which coin do you want?<br>
+	<input id="coinTypeIn" class="input is-primary is-small" type="text" list="symbols"
+	placeholder="Please enter an SEP20 token's address or symbol">
+	<datalist id="symbolsIn"></datalist></p>
+
+	<p>How many coins do you want?<br>
+	<input id="amountIn" type="number" class="input is-primary is-small" ></p>
+
+	<p>Which coin are you going to pay?<br>
+	<input id="coinTypeOut" class="input is-primary is-small" type="text" list="symbols"
+	placeholder="Please enter an SEP20 token's address or symbol">
+	<datalist id="symbolsOut"></datalist></p>
+
+	<p>How many coins can you pay?<br>
+	<input id="amountOut" type="number" class="input is-primary is-small" ></p>
+
+	<p>This order is valid before (expire date):<br>
+	<input id="expireDate" type="datetime-local" class="input is-primary is-small" ></p>
+
+	<center><br><button class="button is-primary" onclick="generateURLs()" 
+	>Create Order URL</button></center>
+
+	<p>&nbsp;</p>
+
+	<!--
+		0x265bD28d79400D55a1665707Fa14A72978FA6043
+		0x77CB87b57F54667978Eb1B199b28a0db8C8E1c0B
+	-->
+
+	<p style="display: none" id="urlP">The Order URL is:<br>
+	<pre id="url"></pre></p>
+<script>
+const MaxAmount = "0x0FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+const SEP206Address = "0x0000000000000000000000000000000000002711"
+const Symbol2Addr = {
+	EBEN: "0x77CB87b57F54667978Eb1B199b28a0db8C8E1c0B",
+	FLEXUSD: "0x7b2B3C5308ab5b2a1d9a94d20D35CCDf61e05b72",
+	MIST: "0x5fA664f69c2A4A3ec94FaC3cBf7049BD9CA73129",
+	LAW: "0x0b00366fBF7037E9d75E4A569ab27dAB84759302",
+	"$CATS": "0x265bD28d79400D55a1665707Fa14A72978FA6043",
+	CLY: "0x7642Df81b5BEAeEb331cc5A104bd13Ba68c34B91",
+	BPAD: "0x9192940099fDB2338B928DE2cad9Cd1525fEa881",
+	JOY: "0x6732E55Ac3ECa734F54C26Bd8DF4eED52Fb79a6E",
+	CLK: "0x659F04F36e90143fCaC202D4BC36C699C078fC98",
+	ORB: "0xff3ed63bf8bc9303ea0a7e1215ba2f82d569799e",
+	SPICE: "0xe11829a7d5d8806bb36e118461a1012588fafd89",
+	DAO: "0xca0235058985fcc1839e9e37c10900a73c126708",
+}
+
+const SEP20ABI = [
+    "function symbol() view returns (string)",
+    "function decimals() view returns (uint8)",
+    "function balanceOf(address account) external view returns (uint256)",
+    "function allowance(address owner, address spender) external view returns (uint256)",
+    "function approve(address spender, uint256 amount) external returns (bool)",
+]
+
+const ExHubAddress = "0x88D12E0369923dBf3b7c830c52ca67C1B0a56f0A"
+
+const ExHubABI = [
+"function makerToAgent(address makerAddr) external view returns (address)",
+"function setMakerAgent(address agent) external",
+"function putData(bytes data) external pure",
+]
+
+const Domain = {
+      name: "exchange dapp",
+      version: "v0.1.0",
+      chainId: 10000,
+      verifyingContract: ExHubAddress,
+      salt: ethers.utils.id("Exchange"),
+}
+
+const Types = {
+	Exchange: [
+		{ name: "coinsToMaker", type: "uint256" },
+		{ name: "coinsToTaker", type: "uint256" },
+		{ name: "campaignID", type: "uint256" },
+		{ name: "takerAddr_dueTime80", type: "uint256" },
+	]
+}
+		
+async function connect() {
+	if (typeof window.ethereum === 'undefined') {
+		if (typeof window.web3 !== 'undefined') {
+			window.ethereum = window.web3;
+		} else if (typeof window.TPJSBrigeClient !== 'undefined') {
+			window.ethereum = window.TPJSBrigeClient;
+		} else if (typeof window.imToken !== 'undefined') {
+			window.ethereum = window.imToken;
+		} else {
+			const provider = await detectEthereumProvider();
+			if (provider) {
+				window.ethereum = provider;
+			} else if(IsPC()) {
+				alert("Your browser has not installed a wallet extension (like MetaMask).");
+			} else {
+				alert("Please open this page inside a mobile wallet App.");
+			}
+		}
+	}
+	window.accounts = await window.ethereum.request({method: 'eth_requestAccounts'});
+	if (window.accounts.length == 0) {
+        	window.AlertDlg = new Attention.Alert({title: "Warning",
+        	  content: "Cannot connect to wallet"});
+		return false;
+	}
+	return true;
+}
+
+async function getSEP20AddrAndSymbolAndDecimals(line) {
+      var trimmed = line.trim()
+      if(trimmed.length == 0) {
+        window.AlertDlg = new Attention.Alert({title: "No Coin Specified",
+          content: "You did not specify a coin address."});
+	return [null, null, null]
+      }
+      if(trimmed==SEP206Address || trimmed == "BCH" || trimmed == "bch") {
+        return [SEP206Address, "BCH", 18]
+      }
+      if(Symbol2Addr[trimmed]) {
+        trimmed = Symbol2Addr[trimmed]
+      }
+      if(!trimmed.startsWith("0x") || trimmed.length < 10) {//not hex address, so it is a symbol
+         const hexAddr = localStorage.getItem("coin-"+trimmed)
+	 if(trimmed === null) {
+           window.AlertDlg = new Attention.Alert({title: "Unknow Coin",
+           content: `Cannot find ${trimmed}'s address in history, Please specify its address directly.`});
+	   return [null, null, null]
+	 }
+	 trimmed = hexAddr
+      }
+      try {
+        var sep20Addr = ethers.utils.getAddress(trimmed)
+      } catch(e) {
+        window.AlertDlg = new Attention.Alert({title: "Invalid Address",
+          content: `Format error: ${trimmed} is not a valid address`});
+	return [null, null, null]
+      }
+      const provider = new ethers.providers.Web3Provider(window.ethereum)
+      const sep20Contract = new ethers.Contract(sep20Addr, SEP20ABI, provider)
+      try {
+        var symbol = await sep20Contract.symbol()
+        var decimals = await sep20Contract.decimals()
+      } catch(e) {
+        window.AlertDlg = new Attention.Alert({title: "Non-SEP20 Address",
+          content: `${trimmed} is a valid address but not an SEP20 address`});
+	return [null, null, null]
+      }
+      localStorage.setItem("coin-"+symbol, sep20Addr)
+      var coinMap = {}
+      var storedCoins = localStorage.getItem("COINS")
+      if(storedCoins) {
+        coinMap = JSON.parse(storedCoins)
+      }
+      coinMap[symbol] = true
+      localStorage.setItem("COINS", JSON.stringify(coinMap))
+      return [sep20Addr, symbol, decimals]
+}
+
+async function init() {
+	if(!await connect()) {return;}
+	const provider = new ethers.providers.Web3Provider(window.ethereum);
+	const signer = provider.getSigner();
+	const myAddr = await signer.getAddress();
+	document.getElementById("signerAddress").innerText = myAddr;
+
+	var d = new Date();
+	const offset = d.getTimezoneOffset()*60*1000
+	d.setTime(Date.now() + 4*3600*1000 - offset) // 4 hours later
+	document.getElementById("expireDate").value = d.toISOString().replace(/\.[0-9][0-9][0-9]Z$/,"")
+
+	var optList = ['<option value="BCH">']
+	var symbols = Object.keys(Symbol2Addr)
+	for(var i=0; i<symbols.length; i++) {
+		optList.push(`<option value="${symbols[i]}">`)
+	}
+	var storedCoins = localStorage.getItem("COINS")
+	if(storedCoins) {
+		symbols = Object.keys(JSON.parse(storedCoins))
+		for(var i=0; i<symbols.length; i++) {
+			if(!Symbol2Addr[symbols[i]]) {
+				optList.unshift(`<option value="${symbols[i]}">`)
+			}
+		}
+	}
+	var opts = optList.join("")
+	document.getElementById("symbolsOut").innerHTML = opts
+	document.getElementById("symbolsIn").innerHTML = opts
+}
+
+async function generateURLs() {
+	if(!await connect()) {return;}
+	const provider = new ethers.providers.Web3Provider(window.ethereum);
+	const signer = provider.getSigner();
+	const myAddr = await signer.getAddress();
+	const network = await provider.getNetwork();
+	console.log(network.chainId)
+	if(network.chainId != 10000) {
+        	window.AlertDlg = new Attention.Alert({title: "Incorrect Network",
+        	  content: "You are not connecting to the smartBCH chain."});
+		return
+	}
+
+	const coinType = document.getElementById("coinTypeOut").value
+	var [sep20Addr, symbol, decimals] = await getSEP20AddrAndSymbolAndDecimals(coinType)
+	if(!sep20Addr) {return;}
+
+	const sep20Contract = new ethers.Contract(sep20Addr, SEP20ABI, provider).connect(signer)
+	try {
+		const balanceAmt = await sep20Contract.balanceOf(myAddr)
+		const allowanceAmt = await sep20Contract.allowance(myAddr, ExHubAddress)
+		var balance = ethers.utils.formatUnits(balanceAmt, decimals)
+		var allowance = ethers.utils.formatUnits(allowanceAmt, decimals)
+	} catch(e) {
+        	console.log(sep20Addr, e)
+        	window.AlertDlg = new Attention.Alert({title: "Non-SEP20 Address",
+        	  content: `${sep20Addr} is a valid address but not an SEP20 address`});
+		return
+	}
+	
+	const expireDate = new Date(document.getElementById("expireDate").value).getTime()
+	if(expireDate < Date.now()) {
+        	window.AlertDlg = new Attention.Alert({title: "Invalid Expire Date",
+        	  content: "Expire date must be later than now"});
+		return
+	}
+	if(expireDate > Date.now() + 3*24*3600*1000) {
+        	window.AlertDlg = new Attention.Alert({title: "Invalid Expire Date",
+        		content: "Expire date must be within 3 days."});
+		return
+	}
+	const expireTimestamp =  Math.floor(expireDate / 1000)
+	
+	var amount = document.getElementById("amountOut").value
+	if(amount.length == 0) {
+		window.AlertDlg = new Attention.Alert({title: "No Paid Amount Specified",
+		  content: "You did not specify the amount to pay."});
+		return
+	}
+	amount = amount*1.0
+	if(amount == 0) {
+		window.AlertDlg = new Attention.Alert({title: "Zero Paid Amount Specified",
+		  content: "The total paid amount can't be zero."});
+		return
+	}
+	if(balance < amount) {
+        	window.AlertDlg = new Attention.Alert({title: "Balance Not Enough",
+			content: `Your ${symbol} balance is ${balance}, less than ${amount}`});
+		return
+	}
+	if(sep20Addr != SEP206Address && allowance < amount) {
+		new Attention.Confirm({title: `Approve ${symbol}`,
+			content: `You did not approve enough ${symbol} to orders.cash, do you want to approve now? After sending the approving transaction, you can retry generating URL.`,
+			onConfirm(component) {
+				sep20Contract.approve(ExHubAddress, MaxAmount)
+			},
+			onCancel(component) {}});
+		return
+	}
+
+	const coinTypeIn = document.getElementById("coinTypeIn").value
+	var [sep20AddrIn, symbolIn, decimalsIn] = await getSEP20AddrAndSymbolAndDecimals(coinTypeIn)
+	if(!sep20AddrIn) {return;}
+
+	const expireNanosecondsBN = ethers.BigNumber.from(expireTimestamp).mul(1000*1000*1000)
+	var expirePicosecondsBN = expireNanosecondsBN.add(Math.floor(Math.random()*1000*1000*1000)).mul(1000)
+		
+	var amountIn = document.getElementById("amountIn").value
+	if(amountIn.length == 0) {
+		window.AlertDlg = new Attention.Alert({title: "No Receiving Amount Specified",
+		  content: "You did not specify the amount to pay."});
+		return
+	}
+	amountIn = amountIn*1.0
+	if(amountIn == 0) {
+		window.AlertDlg = new Attention.Alert({title: "Zero Receiving Amount Specified",
+		  content: "The total receiving amount can't be zero."});
+		return
+	}
+
+	const twoPow96 = ethers.BigNumber.from(2).pow(96);
+	const amtBN = ethers.utils.parseUnits(amount.toString(), decimals)
+	var coinsToTakerBN = ethers.BigNumber.from(sep20Addr);
+	coinsToTakerBN = coinsToTakerBN.mul(twoPow96).add(amtBN);
+
+	const amtBNIn = ethers.utils.parseUnits(amountIn.toString(), decimalsIn)
+	var coinsToMakerBN = ethers.BigNumber.from(sep20AddrIn);
+	coinsToMakerBN = coinsToMakerBN.mul(twoPow96).add(amtBNIn);
+	
+	const msg = {
+		coinsToMaker: coinsToMakerBN,
+		coinsToTaker: coinsToTakerBN,
+		campaignID: ethers.BigNumber.from(0),
+		takerAddr_dueTime80: expirePicosecondsBN,
+	};
+	const sig = await signer._signTypedData(Domain, Types, msg);
+	// o=ver8,coinsToMaker256,coinsToTaker256,dueTime80,r256,s256,v8
+	var order="00"
+	order += hexStr32(coinsToMakerBN).substr(2)
+	order += hexStr32(coinsToTakerBN).substr(2)
+	order += hexStr32(expirePicosecondsBN).substr(64+2-20)
+	order += sig.substr(2)
+	const b64 = base64EncArr(hexToArr(order))
+	const url = `https://orders.cash/take?m=${myAddr}&o=${b64}`
+	document.getElementById("url").innerText = url
+	document.getElementById("urlP").style.display = "block"
+}
+
+function hexStr32(bn) {
+	return ethers.utils.hexZeroPad(bn.toHexString(), 32);
+}
+
+function hexToArr(hexString) {
+	return new Uint8Array(hexString.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+}
+
+window.onload = init;
+
+document.onclick = function() {
+	if(window.AlertDlg) window.AlertDlg.destroy();
+}
+
+async function deploy() {
+  const abi = [ "constructor() public" ];
+  const bytecode = ""
+  
+  const provider = new ethers.providers.Web3Provider(window.ethereum)
+  try {
+    const signer = provider.getSigner()
+    const factory = new ethers.ContractFactory(abi, bytecode, signer)
+    const contract = await factory.deploy();
+    console.log("address:", contract.address)
+    const receipt = await contract.deployTransaction.wait();
+    console.log(receipt)
+  } catch(e) {
+    alert("Error! "+e.toString())
+  }
+}
+
+</script>
+</body>
+</html>

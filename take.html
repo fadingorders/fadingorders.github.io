@@ -1,0 +1,211 @@
+<html>
+<head>
+<link rel="icon" href="assets/favicon.svg" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<script src="assets/ethers-5.5.2.umd.min.js" type="application/javascript"></script>
+<script src="assets/detect-provider.min.js"></script>
+<script src="assets/attention.js"></script>
+<script src="assets/codec-b64.js"></script>
+<link rel="stylesheet" href="assets/bulma.min.css">
+<link rel="stylesheet" href="assets/attention.css">
+<title>P2P Orders</title>
+</head>
+<body>
+<body style="margin: 0 auto; width: 380px">
+	<p>Your Address:<br><u id="signerAddress"></u></p>
+	<p>The Maker's Address:<br><u id="makerAddr"></u></p>
+	<p>The Maker Wants from You:<br><u id="toMaker"></u></p>
+	<p>The Maker Pays to You:<br><u id="toTaker"></u></p>
+	<p>The Order Expires At:<br><u id="expireDate"></u></p>
+	<center><br><button class="button is-primary" onclick="takeOrder()" 
+	>Take This Order</button></center>
+</div>
+<script>
+const MaxAmount = "0x0FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+const SEP206Address = "0x0000000000000000000000000000000000002711"
+// o=ver8,coinsToMaker256,coinsToTaker256,dueTime80,r256,s256,v8
+const CoinTypeToMakerStart = 1
+const AmountToMakerStart   = 1+20
+const CoinTypeToTakerStart = 1+20+12
+const AmountToTakerStart   = 1+20+12+20
+const DueTimeStart         = 1+20+12+20+12
+const SigRStart            = 1+20+12+20+12+10
+const SigSStart            = 1+20+12+20+12+10+32
+const SigVStart            = 1+20+12+20+12+10+32+32
+
+const SEP20ABI = [
+    "function symbol() view returns (string)",
+    "function decimals() view returns (uint8)",
+    "function balanceOf(address account) external view returns (uint256)",
+    "function allowance(address owner, address spender) external view returns (uint256)",
+    "function approve(address spender, uint256 amount) external returns (bool)",
+]
+
+const ExHubAddress = "0x88D12E0369923dBf3b7c830c52ca67C1B0a56f0A"
+
+const ExHubABI = [
+"function exchange(uint256 coinsToMaker, uint256 coinsToTaker, uint256 takerAddr_dueTime80_v8, bytes32 r, bytes32 s) payable external",
+"function isReplay(address makerAddr, uint dueTime) external view returns (bool)",
+]
+
+async function connect() {
+	if (typeof window.ethereum === 'undefined') {
+		if (typeof window.web3 !== 'undefined') {
+			window.ethereum = window.web3;
+		} else if (typeof window.TPJSBrigeClient !== 'undefined') {
+			window.ethereum = window.TPJSBrigeClient;
+		} else if (typeof window.imToken !== 'undefined') {
+			window.ethereum = window.imToken;
+		} else {
+			const provider = await detectEthereumProvider();
+			if (provider) {
+				window.ethereum = provider;
+			} else if(IsPC()) {
+				alert("Your browser has not installed a wallet extension (like MetaMask).");
+			} else {
+				alert("Please open this page inside a mobile wallet App.");
+			}
+		}
+	}
+	window.accounts = await window.ethereum.request({method: 'eth_requestAccounts'});
+	if (window.accounts.length == 0) {
+        	window.AlertDlg = new Attention.Alert({title: "Warning",
+        	  content: "Cannot connect to wallet"});
+		return false;
+	}
+	return true;
+}
+
+function timestamp2string(timestamp) {
+  var t = new Date()
+  t.setTime(timestamp)
+  var s = t.toLocaleString("en-US", {hour12: false})
+  return s.slice(0, s.length-3)
+}
+
+async function init() {
+	if(!connect()) {return;}
+	const provider = new ethers.providers.Web3Provider(window.ethereum);
+	const signer = provider.getSigner();
+	const myAddr = await signer.getAddress();
+	document.getElementById("signerAddress").innerText = myAddr;
+
+	const url = new URL(location.href);
+	const orderB64 = url.searchParams.get("o");
+	if(!orderB64) {return;}
+
+	const u8arr = base64DecToArr(orderB64);
+
+	var order={}
+	order.makerAddr = ethers.utils.getAddress(url.searchParams.get("m"))
+	document.getElementById("makerAddr").innerText = order.makerAddr
+	order.coinTypeToMaker = ethers.utils.getAddress(ethers.utils.hexlify(u8arr.slice(CoinTypeToMakerStart, AmountToMakerStart)))
+	order.amountToMakerBN = ethers.BigNumber.from(ethers.utils.hexlify(u8arr.slice(AmountToMakerStart, CoinTypeToTakerStart)))
+	order.coinsToMaker = ethers.utils.hexlify(u8arr.slice(CoinTypeToMakerStart, CoinTypeToTakerStart))
+	order.coinTypeToTaker = ethers.utils.getAddress(ethers.utils.hexlify(u8arr.slice(CoinTypeToTakerStart, AmountToTakerStart)))
+	order.amountToTakerBN = ethers.BigNumber.from(ethers.utils.hexlify(u8arr.slice(AmountToTakerStart, DueTimeStart)))
+	order.coinsToTaker = ethers.utils.hexlify(u8arr.slice(CoinTypeToTakerStart, DueTimeStart))
+	order.dueTime = ethers.BigNumber.from(ethers.utils.hexlify(u8arr.slice(DueTimeStart, SigRStart)))
+	order.r = ethers.BigNumber.from(ethers.utils.hexlify(u8arr.slice(SigRStart, SigSStart))).toHexString()
+	order.s = ethers.BigNumber.from(ethers.utils.hexlify(u8arr.slice(SigSStart, SigVStart))).toHexString()
+	order.v = ethers.BigNumber.from(ethers.utils.hexlify(u8arr.slice(SigVStart)))
+	window.order = order
+
+	const sep20ToMaker = new ethers.Contract(order.coinTypeToMaker, SEP20ABI, provider)
+	const symbolToMaker = await sep20ToMaker.symbol()
+	const decimalsToMaker = await sep20ToMaker.decimals()
+	order.amountToMaker = ethers.utils.formatUnits(order.amountToMakerBN, decimalsToMaker)
+	const toMaker = `${order.amountToMaker} <a target="_blank" href="https://smartscan.cash/address/${order.coinTypeToMaker}">${symbolToMaker}</a>`
+	document.getElementById("toMaker").innerHTML = toMaker
+
+	const sep20ToTaker = new ethers.Contract(order.coinTypeToTaker, SEP20ABI, provider)
+	const symbolToTaker = await sep20ToTaker.symbol()
+	const decimalsToTaker = await sep20ToTaker.decimals()
+	order.amountToTaker = ethers.utils.formatUnits(order.amountToTakerBN, decimalsToTaker)
+	const toTaker = `${order.amountToTaker} <a target="_blank" href="https://smartscan.cash/address/${order.coinTypeToTaker}">${symbolToTaker}</a>`
+	document.getElementById("toTaker").innerHTML = toTaker
+	
+	const dueTime = order.dueTime.div(1000*1000*1000).toNumber() //picoseconds to microseconds
+	document.getElementById("expireDate").innerText = timestamp2string(dueTime)
+}
+
+async function takeOrder() {
+	const provider = new ethers.providers.Web3Provider(window.ethereum);
+	const signer = provider.getSigner();
+	const myAddr = await signer.getAddress();
+	const network = await provider.getNetwork();
+	if(network.chainId != 10000) {
+        	window.AlertDlg = new Attention.Alert({title: "Incorrect Network",
+        	  content: "You are not connecting to the smartBCH chain."});
+		return
+	}
+
+	const dueTime = order.dueTime.div(1000*1000*1000).toNumber() //picoseconds to microseconds
+	if(dueTime < Date.now()) {
+		window.ERR = {title: "Order Expired",
+        	  content: "Sorry, but this order was expired at "+timestamp2string(dueTime)};
+        	window.AlertDlg = new Attention.Alert(window.ERR);
+		return false;
+	}
+
+	const sep20ToMaker = new ethers.Contract(order.coinTypeToMaker, SEP20ABI, provider).connect(signer)
+	try {
+		const decimals = await sep20ToMaker.decimals()
+		const balanceAmt = await sep20ToMaker.balanceOf(myAddr)
+		const allowanceAmt = await sep20ToMaker.allowance(myAddr, ExHubAddress)
+		var balance = ethers.utils.formatUnits(balanceAmt, decimals)
+		var allowance = ethers.utils.formatUnits(allowanceAmt, decimals)
+	} catch(e) {
+        	console.log(e)
+        	window.AlertDlg = new Attention.Alert({title: "Non-SEP20 Address",
+        	  content: `${order.coinTypeToMaker} is a valid address but not an SEP20 address`});
+		return
+	}
+
+	if(balance < order.amountToMaker) {
+        	window.AlertDlg = new Attention.Alert({title: "Balance Not Enough",
+			content: `Your ${order.symbolToMaker} balance is ${balance}, less than ${order.amountToMaker}`});
+		return
+	}
+	if(order.coinTypeToMaker != SEP206Address && allowance < order.amountToMaker) {
+		new Attention.Confirm({title: `Approve ${order.symbolToMaker}`,
+			content: `You did not approve enough ${order.symbolToMaker} to orders.cash, do you want to approve now? After sending the approving transaction, you can retry.`,
+			onConfirm(component) {
+				sep20ToMaker.approve(ExHubAddress, MaxAmount)
+			},
+			onCancel(component) {}});
+		return
+	}
+
+	const exhubContract = new ethers.Contract(ExHubAddress, ExHubABI, provider).connect(signer);
+	var alreadyTaken = await exhubContract.isReplay(order.makerAddr, order.dueTime);
+	if(alreadyTaken) {
+		window.ERR = {title: "Already Taken",
+        	  content: "Sorry, but someone has taken this order before"}
+        	window.AlertDlg = new Attention.Alert(window.ERR);
+		return false;
+	}
+
+	const dueTime80_v8 = order.dueTime.mul(256).add(order.v)
+	var tx;
+	if(order.coinTypeToMaker == SEP206Address) {
+		tx = await exhubContract.exchange(order.coinsToMaker, order.coinsToTaker, dueTime80_v8, order.r, order.s, {value: order.amountToMaker});
+	} else {
+		tx = await exhubContract.exchange(order.coinsToMaker, order.coinsToTaker, dueTime80_v8, order.r, order.s);
+	}
+	const receipt = await tx.wait();
+	console.log(receipt);
+	return false;
+}
+
+window.onload = init;
+
+document.onclick = function() {
+	if(window.AlertDlg) window.AlertDlg.destroy();
+}
+
+</script>
+<iframe id="srcIframe" src="" style="display: none" hidden></iframe>
+</body>
+</html>
