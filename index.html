@@ -6,7 +6,6 @@
 <script src="assets/ethers-5.5.2.umd.min.js" type="application/javascript"></script>
 <script src="assets/detect-provider.min.js"></script>
 <script src="assets/attention.js"></script>
-<script src="assets/randarray.js"></script>
 <script src="assets/codec-b64.js"></script>
 <link rel="stylesheet" href="assets/bulma.min.css">
 <link rel="stylesheet" href="assets/attention.css">
@@ -17,7 +16,7 @@
 	<p>Your Address:<br><u id="signerAddress"></u></p>
 
 	<p>Which coin do you want?<br>
-	<input id="coinTypeIn" class="input is-primary is-small" type="text" list="symbols"
+	<input id="coinTypeIn" class="input is-primary is-small" type="text" list="symbolsIn"
 	placeholder="Please enter an SEP20 token's address or symbol">
 	<datalist id="symbolsIn"></datalist></p>
 
@@ -25,7 +24,7 @@
 	<input id="amountIn" type="number" class="input is-primary is-small" ></p>
 
 	<p>Which coin are you going to pay?<br>
-	<input id="coinTypeOut" class="input is-primary is-small" type="text" list="symbols"
+	<input id="coinTypeOut" class="input is-primary is-small" type="text" list="symbolsOut"
 	placeholder="Please enter an SEP20 token's address or symbol">
 	<datalist id="symbolsOut"></datalist></p>
 
@@ -35,7 +34,7 @@
 	<p>This order is valid before (expire date):<br>
 	<input id="expireDate" type="datetime-local" class="input is-primary is-small" ></p>
 
-	<center><br><button class="button is-primary" onclick="generateURLs()" 
+	<center><br><button class="button is-primary" onclick="generateURL()" 
 	>Create Order URL</button></center>
 
 	<p>&nbsp;</p>
@@ -207,7 +206,7 @@ async function init() {
 	document.getElementById("symbolsIn").innerHTML = opts
 }
 
-async function generateURLs() {
+async function generateURL() {
 	if(!await connect()) {return;}
 	const provider = new ethers.providers.Web3Provider(window.ethereum);
 	const signer = provider.getSigner();
