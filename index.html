@@ -40,9 +40,10 @@
 	<p>&nbsp;</p>
 
 	<!--
-		0x265bD28d79400D55a1665707Fa14A72978FA6043
-		0x77CB87b57F54667978Eb1B199b28a0db8C8E1c0B
+	<center><br><button class="button is-primary" onclick="deploy()" 
+	>Deploy</button></center>
 	-->
+
 
 	<p style="display: none" id="urlP">The Order URL is:<br>
 	<pre id="url"></pre></p>
@@ -72,7 +73,7 @@ const SEP20ABI = [
     "function approve(address spender, uint256 amount) external returns (bool)",
 ]
 
-const ExHubAddress = "0x88D12E0369923dBf3b7c830c52ca67C1B0a56f0A"
+const ExHubAddress = "0x707e124E66A85988a8243C8ADeBb7788fED69fe2"
 
 const ExHubABI = [
 "function makerToAgent(address makerAddr) external view returns (address)",
@@ -212,8 +213,7 @@ async function generateURL() {
 	const signer = provider.getSigner();
 	const myAddr = await signer.getAddress();
 	const network = await provider.getNetwork();
-	console.log(network.chainId)
-	if(network.chainId != 10000) {
+	if(network.chainId != Domain.chainId) {
         	window.AlertDlg = new Attention.Alert({title: "Incorrect Network",
         	  content: "You are not connecting to the smartBCH chain."});
 		return
@@ -318,8 +318,7 @@ async function generateURL() {
 	order += hexStr32(coinsToTakerBN).substr(2)
 	order += hexStr32(expirePicosecondsBN).substr(64+2-20)
 	order += sig.substr(2)
-	const b64 = base64EncArr(hexToArr(order))
-	const url = `https://orders.cash/take?m=${myAddr}&o=${b64}`
+	const url = "https://orders.cash/take?o="+base64EncArr(hexToArr(order))
 	document.getElementById("url").innerText = url
 	document.getElementById("urlP").style.display = "block"
 }

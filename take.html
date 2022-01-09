@@ -9,7 +9,7 @@
 <script src="assets/codec-b64.js"></script>
 <link rel="stylesheet" href="assets/bulma.min.css">
 <link rel="stylesheet" href="assets/attention.css">
-<title>P2P Orders</title>
+<title>Starter Money</title>
 </head>
 <body>
 <body style="margin: 0 auto; width: 380px">
@@ -18,8 +18,11 @@
 	<p>The Maker Wants from You:<br><u id="toMaker"></u></p>
 	<p>The Maker Pays to You:<br><u id="toTaker"></u></p>
 	<p>The Order Expires At:<br><u id="expireDate"></u></p>
-	<center><br><button class="button is-primary" onclick="takeOrder()" 
+	<p>Order Status:&nbsp;<b id="status"></b></p>
+	<center id="takeDiv" style="display: none"><br><button class="button is-info" onclick="takeOrder()" 
 	>Take This Order</button></center>
+	<center id="cancelDiv" style="display: none"><br><button class="button is-info" onclick="cancelOrder()" 
+	>Cancel This Order</button></center>
 </div>
 <script>
 const MaxAmount = "0x0FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
@@ -42,11 +45,13 @@ const SEP20ABI = [
     "function approve(address spender, uint256 amount) external returns (bool)",
 ]
 
-const ExHubAddress = "0x88D12E0369923dBf3b7c830c52ca67C1B0a56f0A"
+const ExHubAddress = "0x707e124E66A85988a8243C8ADeBb7788fED69fe2"
 
 const ExHubABI = [
 "function exchange(uint256 coinsToMaker, uint256 coinsToTaker, uint256 takerAddr_dueTime80_v8, bytes32 r, bytes32 s) payable external",
 "function isReplay(address makerAddr, uint dueTime) external view returns (bool)",
+"function addNewDueTime(uint newDueTime) external",
+"function getSigner(uint256 coinsToMaker, uint256 coinsToTaker, uint256 campaignID, uint256 takerAddr_dueTime80_v8, bytes32 r, bytes32 s) public view returns (address)",
 ]
 
 async function connect() {
@@ -81,7 +86,7 @@ function timestamp2string(timestamp) {
   var t = new Date()
   t.setTime(timestamp)
   var s = t.toLocaleString("en-US", {hour12: false})
-  return s.slice(0, s.length-3)
+  return s.slice(0, s.length-3).replace(" 24:", " 00:")
 }
 
 async function init() {
@@ -98,8 +103,6 @@ async function init() {
 	const u8arr = base64DecToArr(orderB64);
 
 	var order={}
-	order.makerAddr = ethers.utils.getAddress(url.searchParams.get("m"))
-	document.getElementById("makerAddr").innerText = order.makerAddr
 	order.coinTypeToMaker = ethers.utils.getAddress(ethers.utils.hexlify(u8arr.slice(CoinTypeToMakerStart, AmountToMakerStart)))
 	order.amountToMakerBN = ethers.BigNumber.from(ethers.utils.hexlify(u8arr.slice(AmountToMakerStart, CoinTypeToTakerStart)))
 	order.coinsToMaker = ethers.utils.hexlify(u8arr.slice(CoinTypeToMakerStart, CoinTypeToTakerStart))
@@ -113,10 +116,10 @@ async function init() {
 	window.order = order
 
 	const sep20ToMaker = new ethers.Contract(order.coinTypeToMaker, SEP20ABI, provider)
-	const symbolToMaker = await sep20ToMaker.symbol()
+	order.symbolToMaker = await sep20ToMaker.symbol()
 	const decimalsToMaker = await sep20ToMaker.decimals()
 	order.amountToMaker = ethers.utils.formatUnits(order.amountToMakerBN, decimalsToMaker)
-	const toMaker = `${order.amountToMaker} <a target="_blank" href="https://smartscan.cash/address/${order.coinTypeToMaker}">${symbolToMaker}</a>`
+	const toMaker = `${order.amountToMaker} <a target="_blank" href="https://smartscan.cash/address/${order.coinTypeToMaker}">${order.symbolToMaker}</a>`
 	document.getElementById("toMaker").innerHTML = toMaker
 
 	const sep20ToTaker = new ethers.Contract(order.coinTypeToTaker, SEP20ABI, provider)
@@ -128,6 +131,45 @@ async function init() {
 	
 	const dueTime = order.dueTime.div(1000*1000*1000).toNumber() //picoseconds to microseconds
 	document.getElementById("expireDate").innerText = timestamp2string(dueTime)
+	if(dueTime < Date.now()) {
+		document.getElementById("status").innerText = "Expired"
+		return
+	}
+
+	const exhubContract = new ethers.Contract(ExHubAddress, ExHubABI, provider).connect(signer);
+	const dueTime80_v8 = order.dueTime.mul(256).add(order.v)
+	//const gas = await exhubContract.estimateGas.exchange(order.coinsToMaker, order.coinsToTaker, dueTime80_v8, order.r, order.s);
+	//console.log(gas)
+	order.makerAddr = await exhubContract.getSigner(order.coinsToMaker, order.coinsToTaker, 0,
+					     dueTime80_v8, order.r, order.s);
+	document.getElementById("makerAddr").innerText = order.makerAddr
+
+	var alreadyTaken = await exhubContract.isReplay(order.makerAddr, order.dueTime);
+	if(alreadyTaken) {
+		document.getElementById("status").innerText = "Already Dealt"
+		return
+	}
+
+	const balanceBN = await sep20ToTaker.balanceOf(order.makerAddr)
+	if(balanceBN.lt(order.amountToTakerBN)) {
+		document.getElementById("status").innerText = "Maker's Balance Is Not Enough"
+		return
+	}
+
+	document.getElementById("status").innerText = "Not Dealt"
+	
+	if(order.makerAddr == myAddr) {
+		document.getElementById("cancelDiv").style.display = "block"
+	} else {
+		document.getElementById("takeDiv").style.display = "block"
+	}
+}
+
+async function cancelOrder() {
+	const provider = new ethers.providers.Web3Provider(window.ethereum);
+	const signer = provider.getSigner();
+	const exhubContract = new ethers.Contract(ExHubAddress, ExHubABI, provider).connect(signer);
+	await exhubContract.addNewDueTime(order.dueTime)
 }
 
 async function takeOrder() {
@@ -135,7 +177,7 @@ async function takeOrder() {
 	const signer = provider.getSigner();
 	const myAddr = await signer.getAddress();
 	const network = await provider.getNetwork();
-	if(network.chainId != 10000) {
+	if(network.chainId != Domain.chainId) {
         	window.AlertDlg = new Attention.Alert({title: "Incorrect Network",
         	  content: "You are not connecting to the smartBCH chain."});
 		return
@@ -179,14 +221,6 @@ async function takeOrder() {
 	}
 
 	const exhubContract = new ethers.Contract(ExHubAddress, ExHubABI, provider).connect(signer);
-	var alreadyTaken = await exhubContract.isReplay(order.makerAddr, order.dueTime);
-	if(alreadyTaken) {
-		window.ERR = {title: "Already Taken",
-        	  content: "Sorry, but someone has taken this order before"}
-        	window.AlertDlg = new Attention.Alert(window.ERR);
-		return false;
-	}
-
 	const dueTime80_v8 = order.dueTime.mul(256).add(order.v)
 	var tx;
 	if(order.coinTypeToMaker == SEP206Address) {
