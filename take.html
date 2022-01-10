@@ -177,7 +177,7 @@ async function takeOrder() {
 	const signer = provider.getSigner();
 	const myAddr = await signer.getAddress();
 	const network = await provider.getNetwork();
-	if(network.chainId != Domain.chainId) {
+	if(network.chainId != 10000) {
         	window.AlertDlg = new Attention.Alert({title: "Incorrect Network",
         	  content: "You are not connecting to the smartBCH chain."});
 		return
