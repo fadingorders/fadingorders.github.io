@@ -118,14 +118,14 @@ async function init() {
 	const sep20ToMaker = new ethers.Contract(order.coinTypeToMaker, SEP20ABI, provider)
 	order.symbolToMaker = await sep20ToMaker.symbol()
 	const decimalsToMaker = await sep20ToMaker.decimals()
-	order.amountToMaker = ethers.utils.formatUnits(order.amountToMakerBN, decimalsToMaker)
+	order.amountToMaker = ethers.utils.formatUnits(order.amountToMakerBN, decimalsToMaker)*1.0
 	const toMaker = `${order.amountToMaker} <a target="_blank" href="https://smartscan.cash/address/${order.coinTypeToMaker}">${order.symbolToMaker}</a>`
 	document.getElementById("toMaker").innerHTML = toMaker
 
 	const sep20ToTaker = new ethers.Contract(order.coinTypeToTaker, SEP20ABI, provider)
 	const symbolToTaker = await sep20ToTaker.symbol()
 	const decimalsToTaker = await sep20ToTaker.decimals()
-	order.amountToTaker = ethers.utils.formatUnits(order.amountToTakerBN, decimalsToTaker)
+	order.amountToTaker = ethers.utils.formatUnits(order.amountToTakerBN, decimalsToTaker)*1.0
 	const toTaker = `${order.amountToTaker} <a target="_blank" href="https://smartscan.cash/address/${order.coinTypeToTaker}">${symbolToTaker}</a>`
 	document.getElementById("toTaker").innerHTML = toTaker
 	
@@ -196,8 +196,8 @@ async function takeOrder() {
 		const decimals = await sep20ToMaker.decimals()
 		const balanceAmt = await sep20ToMaker.balanceOf(myAddr)
 		const allowanceAmt = await sep20ToMaker.allowance(myAddr, ExHubAddress)
-		var balance = ethers.utils.formatUnits(balanceAmt, decimals)
-		var allowance = ethers.utils.formatUnits(allowanceAmt, decimals)
+		var balance = ethers.utils.formatUnits(balanceAmt, decimals)*1.0
+		var allowance = ethers.utils.formatUnits(allowanceAmt, decimals)*1.0
 	} catch(e) {
         	console.log(e)
         	window.AlertDlg = new Attention.Alert({title: "Non-SEP20 Address",
