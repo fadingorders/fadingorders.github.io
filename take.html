@@ -90,7 +90,7 @@ function timestamp2string(timestamp) {
 }
 
 async function init() {
-	if(!connect()) {return;}
+	if(!await connect()) {return;}
 	const provider = new ethers.providers.Web3Provider(window.ethereum);
 	const signer = provider.getSigner();
 	const myAddr = await signer.getAddress();
