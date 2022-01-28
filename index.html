@@ -40,13 +40,15 @@
 	<p>&nbsp;</p>
 
 	<!--
-	<center><br><button class="button is-primary" onclick="deploy()" 
-	>Deploy</button></center>
+	<center><br><button class="button is-primary" onclick="deploy()">Deploy</button></center>
 	-->
 
 
 	<p style="display: none" id="urlP">The Order URL is:<br>
 	<pre id="url"></pre></p>
+
+	<center style="font-size: 10px"><br><a href="https://github.com/fadingorders/fadingorders/tree/main/SecurityAuditReport"
+	target="_blank">Security Audit</a></center>
 <script>
 const MaxAmount = "0x0FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
 const SEP206Address = "0x0000000000000000000000000000000000002711"
@@ -73,7 +75,7 @@ const SEP20ABI = [
     "function approve(address spender, uint256 amount) external returns (bool)",
 ]
 
-const ExHubAddress = "0x707e124E66A85988a8243C8ADeBb7788fED69fe2"
+const ExHubAddress = "0x351264f24820C91317024B7748C98CA63d6a2781"
 
 const ExHubABI = [
 "function makerToAgent(address makerAddr) external view returns (address)",
