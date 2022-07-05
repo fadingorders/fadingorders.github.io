@@ -224,7 +224,7 @@ async function takeOrder() {
 	const dueTime80_v8 = order.dueTime.mul(256).add(order.v)
 	var tx;
 	if(order.coinTypeToMaker == SEP206Address) {
-		tx = await exhubContract.exchange(order.coinsToMaker, order.coinsToTaker, dueTime80_v8, order.r, order.s, {value: order.amountToMaker});
+		tx = await exhubContract.exchange(order.coinsToMaker, order.coinsToTaker, dueTime80_v8, order.r, order.s, {value: order.amountToMakerBN.toString()});
 	} else {
 		tx = await exhubContract.exchange(order.coinsToMaker, order.coinsToTaker, dueTime80_v8, order.r, order.s);
 	}
