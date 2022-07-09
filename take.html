@@ -212,7 +212,7 @@ async function takeOrder() {
 	}
 	if(order.coinTypeToMaker != SEP206Address && allowance < order.amountToMaker) {
 		new Attention.Confirm({title: `Approve ${order.symbolToMaker}`,
-			content: `You did not approve enough ${order.symbolToMaker} to orders.cash, do you want to approve now? After sending the approving transaction, you can retry.`,
+			content: `You did not approve enough ${order.symbolToMaker} to legacy.orders.cash, do you want to approve now? After sending the approving transaction, you can retry.`,
 			onConfirm(component) {
 				sep20ToMaker.approve(ExHubAddress, MaxAmount)
 			},

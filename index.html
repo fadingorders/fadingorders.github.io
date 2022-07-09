@@ -283,7 +283,7 @@ async function generateURL() {
 	}
 	if(allowance < amount) {
 		new Attention.Confirm({title: `Approve ${symbol}`,
-			content: `You did not approve enough ${symbol} to orders.cash, do you want to approve now? After sending the approving transaction, you can retry generating URL.`,
+			content: `You did not approve enough ${symbol} to legacy.orders.cash, do you want to approve now? After sending the approving transaction, you can retry generating URL.`,
 			onConfirm(component) {
 				sep20Contract.approve(ExHubAddress, MaxAmount)
 			},
@@ -333,7 +333,7 @@ async function generateURL() {
 	order += hexStr32(coinsToTakerBN).substr(2)
 	order += hexStr32(expirePicosecondsBN).substr(64+2-20)
 	order += sig.substr(2)
-	const url = "https://orders.cash/take?o="+base64EncArr(hexToArr(order))
+	const url = "https://legacy.orders.cash/take?o="+base64EncArr(hexToArr(order))
 	document.getElementById("url").innerText = url
 	document.getElementById("urlP").style.display = "block"
 }
